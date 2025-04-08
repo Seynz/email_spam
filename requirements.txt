@@ -1,6 +1,10 @@
-# streamlit
+# cara pakai :
+# pip install -r requirements.txt
+
+streamlit
 scikit-learn
 joblib
 Sastrawi
 nltk
 langdetect
+
