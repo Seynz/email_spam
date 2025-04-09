@@ -1,45 +1,73 @@
 import streamlit as st
-import joblib
-import nltk
-import re
-import string
-from Sastrawi.Stemmer.StemmerFactory import StemmerFactory
-from nltk.corpus import stopwords
-import langdetect
+import pandas as pd
+from preprocessing.deteksi_spam import deteksi_spam
 
-# Load model dan vectorizer
-model = joblib.load('./model_svm_spam.pkl')
-vectorizer = joblib.load('./vectorizer_tfidf.pkl')
-# Siapkan tools preprocessing
-stop_words = set(stopwords.words('indonesian'))
-regex = re.compile(r'[\d' + string.punctuation + ']')
-factory = StemmerFactory()
-stemmer = factory.create_stemmer()
-
-def preprocess_text(text):
-    try:
-        if langdetect.detect(text) != 'id':
-            return ''
-    except:
-        return ''
-    text = text.lower()
-    text = regex.sub(' ', text)
-    words = text.split()
-    words = [word for word in words if word not in stop_words]
-    text = ' '.join(words)
-    text = stemmer.stem(text)
-    return text
-
-def deteksi_spam(teks_email):
-    teks_bersih = preprocess_text(teks_email)
-    teks_vector = vectorizer.transform([teks_bersih])
-    hasil = model.predict(teks_vector)
-    return "Spam" if hasil[0] == 0 else "Bukan Spam"
 
 # Streamlit UI
 st.title("📧 Deteksi Spam Email")
-input_email = st.text_area("Masukkan isi email:")
 
-if st.button("Deteksi"):
-    hasil = deteksi_spam(input_email)
-    st.success(f"Hasil Deteksi: {hasil}")
+# Pilihan mode input
+mode = st.radio("Pilih mode input:", ["Deteksi Satu Email", "Deteksi Banyak Email (CSV)"])
+
+if mode == "Deteksi Satu Email":
+    # Input untuk satu teks
+    st.subheader("Deteksi untuk Satu Email")
+    input_email = st.text_area("Masukkan isi email:")
+
+    if st.button("Deteksi"):
+        hasil = deteksi_spam(input_email)
+        st.success(f"Hasil Deteksi: {hasil}")
+
+elif mode == "Deteksi Banyak Email (CSV)":
+    # Input untuk file CSV
+    st.subheader("Deteksi untuk Banyak Email (CSV)")
+    uploaded_file = st.file_uploader("Unggah file CSV", type=["csv"])
+
+    if uploaded_file is not None:
+        try:
+            # Membaca file CSV
+            df = pd.read_csv(uploaded_file)
+            st.write("Data yang diunggah:")
+            st.dataframe(df.head())
+
+            # Mengubah nama kolom menjadi huruf kecil
+            df.columns = df.columns.str.lower()
+
+            # Memastikan kolom teks ada
+            text_column = st.text_input("Masukkan nama kolom yang berisi teks email:", value="email").lower()
+
+            if text_column in df.columns:
+                # Menyiapkan progress bar dan spinner
+                with st.spinner("Sedang memproses..."):
+                    progress_bar = st.progress(0)
+                    total_rows = len(df)
+                    processed_rows = 0
+
+                    # Proses deteksi spam
+                    hasil_deteksi = []
+                    for teks in df[text_column]:
+                        hasil_deteksi.append(deteksi_spam(teks))
+                        processed_rows += 1
+                        progress_bar.progress(processed_rows / total_rows)
+
+                    # Menambahkan hasil deteksi ke DataFrame
+                    df['Hasil Deteksi'] = hasil_deteksi
+
+                # Tampilkan hasil dan tombol unduh setelah selesai
+                st.success("✅ Proses deteksi selesai!")
+
+                st.write("📄 Hasil Deteksi:")
+                st.dataframe(df[[text_column, 'Hasil Deteksi']])
+
+                # Unduh hasil
+                csv = df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="⬇️ Unduh Hasil Deteksi",
+                    data=csv,
+                    file_name="hasil_deteksi_spam.csv",
+                    mime="text/csv"
+                )
+            else:
+                st.error(f"❌ Kolom '{text_column}' tidak ditemukan dalam file CSV.")
+        except Exception as e:
+            st.error(f"⚠️ Terjadi kesalahan saat memproses file: {e}")
